@@ -5,6 +5,7 @@ import boto3
 import logging
 import tarfile
 import threading
+from botocore.exceptions import ClientError
 from .s3_mpu import S3MPU
 from .utils import _create_s3_client, _convert_to_bytes, _threads, MIN_S3_SIZE
 
@@ -261,8 +262,17 @@ class S3Tar:
         Returns:
             io.BytesIO: BytesIO object of the tar file
         """
-        source_key_io = self._download_source_file(key)
-        source_mtime = self._get_source_key_mtime(key)
+        try:
+            source_key_io = self._download_source_file(key)
+            source_mtime = self._get_source_key_mtime(key)
+        except ClientError as exc:
+            status = exc.response['ResponseMetadata']['HTTPStatusCode']
+            if status == 404:
+                source_key_io = io.BytesIO()
+                source_mtime = time.time()
+            else:
+                raise exc
+
         source_tar_io = self._save_bytes_to_tar(
             tar_member_name,
             source_key_io,
